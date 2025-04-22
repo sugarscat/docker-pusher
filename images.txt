@@ -5,4 +5,6 @@ ghcr.io/fatedier/frps:v0.62.0
 adguard/adguardhome
 gitlab/gitlab-ce:17.9.6-ce.0
 gitlab/gitlab-runner:v17.9.3
-vaultwarden/server:1.33.2-alpine
+#支持别名（格式为 '--alias=custom_image_name' ）
+#--alias=inginx nginx
+--alias=vaultwarden vaultwarden/server:1.33.2-alpine
