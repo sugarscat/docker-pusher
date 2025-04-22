@@ -3,3 +3,4 @@ whyour/qinglong
 ghcr.io/fatedier/frpc:v0.62.0
 ghcr.io/fatedier/frps:v0.62.0
 adguard/adguardhome
+gitlab/gitlab-ce:17.9.6-ce.0
