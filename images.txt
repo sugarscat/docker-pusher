@@ -8,3 +8,6 @@ gitlab/gitlab-runner:v17.9.3
 #支持别名（格式为 '--alias=custom_image_name' ）
 #--alias=inginx nginx
 --alias=vaultwarden vaultwarden/server:1.33.2-alpine
+alpine:latest
+node:22.14.0
+python:3.11
