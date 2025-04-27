@@ -1,10 +1,9 @@
-name: Docker
+name: Docker 🐳✨
 
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
-
 
 env:
   ALIYUN_REGISTRY: "${{ secrets.ALIYUN_REGISTRY }}"
@@ -13,184 +12,94 @@ env:
   ALIYUN_REGISTRY_PASSWORD: "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
 
 jobs:
-
   build:
-    name: Pull
+    name: Pull & Push 🚀
     runs-on: ubuntu-latest
-    steps:
-    - name: Before freeing up disk space
-      run: |
-        echo "Before freeing up disk space"
-        echo "=============================================================================="
-        df -hT
-        echo "=============================================================================="
 
-    # 增加可用磁盘空间
-    - name: Maximize build space
+    steps:
+    - name: Check Disk Before Cleanup 📦
+      run: |
+        echo "🧹 Before cleaning up..."
+        df -hT
+
+    - name: Maximize Disk Space 📈
       uses: easimon/maximize-build-space@master
       with:
-
         root-reserve-mb: 2048
         swap-size-mb: 128
-        remove-dotnet: 'true'
-        remove-haskell: 'true'
-        # 如果空间还是不够用，可以把以下开启，清理出更多空间
-        # remove-android: 'true'
-        # remove-codeql: 'true'
+        remove-dotnet: true
+        remove-haskell: true
         build-mount-path: '/var/lib/docker/'
 
-    - name: Restart docker
+    - name: Restart Docker 🔄
       run: sudo service docker restart
 
-    - name: Free up disk space complete
+    - name: Check Disk After Cleanup 📦✅
       run: |
-        echo "Free up disk space complete"
-        echo "=============================================================================="
+        echo "✨ Cleanup done!"
         df -hT
-        echo "=============================================================================="
 
-    - name: Checkout Code
+    - name: Checkout Code 🛒
       uses: actions/checkout@v4
 
-    - name: Docker Setup Buildx
+    - name: Setup Docker Buildx 🔧
       uses: docker/setup-buildx-action@v3
 
-    - name: Build and push image Aliyun
+    - name: Pull, Tag, Push Images 📦➡️🛳️
       run: |
-        docker login -u $ALIYUN_REGISTRY_USER -p $ALIYUN_REGISTRY_PASSWORD $ALIYUN_REGISTRY
-        # 数据预处理,判断镜像是否重名
-        declare -A duplicate_images
-        declare -A temp_map
+        echo "🔑 Login to Aliyun Registry..."
+        docker login -u "$ALIYUN_REGISTRY_USER" -p "$ALIYUN_REGISTRY_PASSWORD" "$ALIYUN_REGISTRY"
+
+        declare -A duplicate_images temp_map
+
+        echo "📝 Analyzing images..."
         while IFS= read -r line || [ -n "$line" ]; do
-            # 忽略空行与注释
-            [[ -z "$line" ]] && continue
-            if echo "$line" | grep -q '^\s*#'; then
-                continue
-            fi
-
-            # 提取 alias 信息，如果没有 --alias 参数，alias 变量将为空
-            alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
-            if [ -z "$alias" ]; then
-              alias="";
-            fi
-            echo "alias is $alias"
-            
-            # 获取镜像的完整名称，例如kasmweb/nginx:1.25.3（命名空间/镜像名:版本号）
-            image=$(echo "$line" | awk '{print $NF}')
-            # 将@sha256:等字符删除
-            image="${image%%@*}"
-            echo "image $image"
-            # 获取镜像名:版本号  例如nginx:1.25.3
-            image_name_tag=$(echo "$image" | awk -F'/' '{print $NF}')
-            echo "image_name_tag $image_name_tag"
-            # 获取命名空间 例如kasmweb,  这里有种特殊情况 docker.io/nginx，把docker.io当成命名空间，也OK
-            name_space=$(echo "$image" | awk -F'/' '{if (NF==3) print $2; else if (NF==2) print $1; else print ""}')
-            echo "name_space: $name_space"
-            # 这里不要是空值影响判断
-            name_space="${name_space}_"
-            # 获取镜像名例如nginx
-            image_name=$(echo "$image_name_tag" | awk -F':' '{print $1}')
-            echo "image_name: $image_name"
-            # 获取版本号 例如 1.25.3
-            image_tag=$(echo "$image_name_tag" | awk -F':' '{print $2}')
-            if [ -z "$image_tag" ]; then
-              image_tag="latest"
-            fi
-            echo "image_tag: $image_tag"
-
-            
-            # 如果镜像存在于数组中，则添加temp_map
-            if [[ -n "${temp_map[$image_name]}" ]]; then
-                 # 如果temp_map已经存在镜像名，判断是不是同一命名空间
-                 if [[ "${temp_map[$image_name]}" != $name_space  ]]; then
-                    echo "duplicate image name: $image_name"
-                    duplicate_images[$image_name]="true"
-                 fi
-            else
-                # 存镜像的命名空间
-                temp_map[$image_name]=$name_space
-            fi       
+          [[ -z "$line" || "$line" =~ ^# ]] && continue
+          alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
+          image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | xargs | awk '{print $NF}')
+          image="${image%%@*}"
+          image_name=$(basename "$image" | cut -d':' -f1)
+          name_space=$(echo "$image" | awk -F'/' '{print (NF==3 ? $2 : (NF==2 ? $1 : ""))}')
+          [ -n "${temp_map[$image_name]}" ] && [ "${temp_map[$image_name]}" != "${name_space}_" ] && duplicate_images["$image_name"]=true
+          temp_map["$image_name"]="${name_space}_"
         done < images.txt
-        
-        
+
+        echo "🚀 Start processing images..."
         while IFS= read -r line || [ -n "$line" ]; do
-            # 忽略空行与注释
-            [[ -z "$line" ]] && continue
-            if echo "$line" | grep -q '^\s*#'; then
-                continue
-            fi
+          [[ -z "$line" || "$line" =~ ^# ]] && continue
+          alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
+          platform=$(echo "$line" | awk -F'--platform[ =]' '{if (NF>1) print $2}' | awk '{print $1}')
+          platform_prefix=${platform//\//_}_
+          [ -z "$platform" ] && platform_prefix=""
 
-            # 提取 alias 信息（使用更通用的正则表达式替代 -P 选项）
-            alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
-            if [ -z "$alias" ]; then
-              alias="";  # 如果没有 --alias 参数，alias 变量将为空
-            fi
-            echo "alias is $alias"
+          image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | xargs | awk '{print $NF}')
+          image="${image%%@*}"
+          image_name_tag=$(basename "$image")
+          image_name=$(echo "$image_name_tag" | cut -d':' -f1)
+          image_tag=$(echo "$image_name_tag" | cut -d':' -f2)
+          [ -z "$image_tag" ] && image_tag="latest"
 
-            # 去除 --alias 参数及其值，但保留其他参数
-            image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | xargs)
-        
-            echo "docker pull $image"
-            docker pull $image
-            platform=$(echo "$line" | awk -F'--platform[ =]' '{if (NF>1) print $2}' | awk '{print $1}')
-            echo "platform is $platform"
-            # 如果存在架构信息 将架构信息拼到镜像名称前面
-            if [ -z "$platform" ]; then
-                platform_prefix=""
-            else
-                platform_prefix="${platform//\//_}_"
-            fi
-            echo "platform_prefix is $platform_prefix"
-            # 获取镜像的完整名称，例如kasmweb/nginx:1.25.3（命名空间/镜像名:版本号）
-            image=$(echo "$line" | awk '{print $NF}')
+          name_space=$(echo "$image" | awk -F'/' '{print (NF==3 ? $2 : (NF==2 ? $1 : ""))}')
+          name_space_prefix=""
+          [ -n "${duplicate_images[$image_name]}" ] && [ -n "$name_space" ] && name_space_prefix="${name_space}_"
 
-            # 获取 镜像名:版本号  例如nginx:1.25.3
-            image_name_tag=$(echo "$image" | awk -F'/' '{print $NF}')
-            # 获取命名空间 例如kasmweb  这里有种特殊情况 docker.io/nginx，把docker.io当成命名空间，也OK
-            name_space=$(echo "$image" | awk -F'/' '{if (NF==3) print $2; else if (NF==2) print $1; else print ""}')
-            # 获取镜像名例  例如nginx
-            image_name=$(echo "$image_name_tag" | awk -F':' '{print $1}')
-            # 获取版本号 例如 1.25.3
-            image_tag=$(echo "$image_name_tag" | awk -F':' '{print $2}')
-            if [ -z "$image_tag" ]; then
-              image_tag="latest"
-            fi
-            echo "image_tag: $image_tag"
-            
-        
-            name_space_prefix=""
-            # 如果镜像名重名
-            if [[ -n "${duplicate_images[$image_name]}" ]]; then
-               #如果命名空间非空，将命名空间加到前缀
-               if [[ -n "${name_space}" ]]; then
-                  name_space_prefix="${name_space}_"
-               fi
-            fi
-            
-            
-            # 将@sha256:等字符删除
-            image_name_tag="${image_name_tag%%@*}"
-            
-            # 检查别名并替换 image_name_tag
-            alias=$(echo "$line" | awk -F'--alias[ =]' '{if (NF>1) print $2}' | awk '{print $1}')
-            if [ -n "$alias" ]; then
-              image_name_tag="${alias}:${image_tag}"
-            fi
-            
-            new_image="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$platform_prefix$name_space_prefix$image_name_tag"
-            echo "docker tag $image $new_image"
-            docker tag $image $new_image
-            echo "docker push $new_image"
-            docker push $new_image
-            echo "开始清理磁盘空间"
-            echo "=============================================================================="
-            df -hT
-            echo "=============================================================================="
-            docker rmi $image
-            docker rmi $new_image
-            echo "磁盘空间清理完毕"
-            echo "=============================================================================="
-            df -hT
-            echo "=============================================================================="     
-            
+          [ -n "$alias" ] && image_name_tag="${alias}:${image_tag}"
+
+          new_image="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$platform_prefix$name_space_prefix$image_name_tag"
+
+          echo "🐳 Pulling $image..."
+          docker pull "$image"
+
+          echo "🔗 Tagging as $new_image..."
+          docker tag "$image" "$new_image"
+
+          echo "📤 Pushing $new_image..."
+          docker push "$new_image"
+
+          echo "🧹 Cleaning up local images..."
+          docker rmi "$image" "$new_image"
+
+          echo "🛢️ Disk usage after cleanup:"
+          df -hT
+          echo "=============================================================================="
         done < images.txt
