@@ -1,4 +1,5 @@
 nginx
+nginx:1.28.0
 whyour/qinglong
 ghcr.io/fatedier/frpc:v0.62.0
 ghcr.io/fatedier/frps:v0.62.0
