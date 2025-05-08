@@ -1,17 +1,19 @@
 nginx
-nginx:1.28.0
 whyour/qinglong
-ghcr.io/fatedier/frpc:v0.62.0
-ghcr.io/fatedier/frps:v0.62.0
+
+fatedier/frpc
+fatedier/frps
+
 adguard/adguardhome
-gitlab/gitlab-ce:17.11.1-ce.0
-gitlab/gitlab-runner:v17.11.0
-gitlab/gitlab-runner-helper:x86_64-v17.11.0
-# 支持别名（格式为 '--alias=custom_image_name' ）
+
+gitlab/gitlab-ce:17.11.2-ce.0
+gitlab/gitlab-runner
+gitlab/gitlab-runner-helper
+
+# 支持别名（格式为 '--alias=custom_image_name 镜像' ）
 # --alias=inginx nginx
---alias=vaultwarden vaultwarden/server:1.33.2-alpine
 --alias=vaultwarden vaultwarden/server:latest
 alpine:latest
-node:22.14.0
-python:3.11
+node
+python
 jetbrains/teamcity-server
