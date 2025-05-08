@@ -1,4 +1,4 @@
-name: Docker 🐳✨
+name: Docker Pusher 🐳✨
 
 on:
   workflow_dispatch:
