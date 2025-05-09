@@ -13,8 +13,10 @@ adguard/adguardhome:latest
 # gitlab/gitlab-runner:v17.11.0
 # gitlab/gitlab-runner-helper:x86_64-v17.11.0
 
+budtmo/docker-android:emulator_14.0
 budtmo/docker-android:emulator_13.0
 budtmo/docker-android:emulator_12.0
+budtmo/docker-android:emulator_11.0
 
 # 支持别名（格式为 '--alias=custom_image_name 镜像' ）
 # --alias=inginx nginx:latest
