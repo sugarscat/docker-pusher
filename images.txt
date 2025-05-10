@@ -6,7 +6,7 @@ jetbrains/teamcity-server:latest
 whyour/qinglong:latest
 adguard/adguardhome:latest
 
-snowdreamtech/frpc:v0.62.1
+snowdreamtech/frpc:0.62.1
 snowdreamtech/frps:0.62.1
 
 # gitlab/gitlab-ce:17.11.1-ce.0
