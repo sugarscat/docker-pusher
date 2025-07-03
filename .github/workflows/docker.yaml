@@ -15,6 +15,18 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Maximize Disk Space 📦
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 2048
+          swap-size-mb: 128
+          remove-dotnet: true
+          remove-haskell: true
+          build-mount-path: '/var/lib/docker/'
+
+      - name: Restart Docker 🔄
+        run: sudo service docker restart
+
       - name: Checkout Code 🛒
         uses: actions/checkout@v4
 
@@ -28,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          DAYS_LIMIT=2
+          DAYS_LIMIT=1
           CUTOFF_DATE=$(date -d "$DAYS_LIMIT days ago" +%s)
 
           get_recent_tags() {
@@ -103,8 +115,9 @@ jobs:
               echo "📤 Pushing to $target"
               docker push "$target"
 
+              echo "🧹 Cleaning up local images..."
               docker rmi "$src" "$target" || true
               echo "✅ Done $src"
-              echo "------------------------------"
+              echo "---------------------------------------------"
             done
           done < images.txt
