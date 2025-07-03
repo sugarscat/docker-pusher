@@ -113,7 +113,7 @@ jobs:
               docker tag "$src" "$target"
 
               echo "📤 Pushing to $target"
-              docker push "$target"
+              timeout --foreground 300 docker push "$target" || { echo "⚠️ Push $target 超时或失败，跳过"; continue; }
 
               echo "🧹 Cleaning up local images..."
               docker rmi "$src" "$target" || true
