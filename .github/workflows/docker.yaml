@@ -3,7 +3,7 @@ name: Docker Pusher 🐳✨
 on:
   workflow_dispatch:
   schedule:
-    - cron: '00 00 * * *'
+    - cron: '0 0 * * *'  # 每天0点执行
 
 env:
   ALIYUN_REGISTRY: "${{ secrets.ALIYUN_REGISTRY }}"
@@ -12,118 +12,101 @@ env:
   ALIYUN_REGISTRY_PASSWORD: "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
 
 jobs:
-  build:
-    name: Pull & Push Stable Images 🚀
+  sync:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Maximize Disk Space 📦
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 2048
-          swap-size-mb: 128
-          remove-dotnet: true
-          remove-haskell: true
-          build-mount-path: '/var/lib/docker/'
-
-      - name: Restart Docker 🔄
-        run: sudo service docker restart
-
-      - name: Install Dependencies 🔧
-        run: sudo apt-get update && sudo apt-get install -y jq curl
-
       - name: Checkout Code 🛒
         uses: actions/checkout@v4
 
-      - name: Setup Docker Buildx 🔧
-        uses: docker/setup-buildx-action@v3
+      - name: Install Tools 🔧
+        run: sudo apt-get update && sudo apt-get install -y curl jq
 
-      - name: Pull, Tag & Push Stable Releases 📦➡️🛳️
+      - name: Login to Aliyun Docker 🐳
+        run: docker login -u "${ALIYUN_REGISTRY_USER}" -p "${ALIYUN_REGISTRY_PASSWORD}" "${ALIYUN_REGISTRY}"
+
+      - name: Sync Docker Images 🚀
         run: |
           set -euo pipefail
 
-          docker login -u "${ALIYUN_REGISTRY_USER}" -p "${ALIYUN_REGISTRY_PASSWORD}" "${ALIYUN_REGISTRY}"
-
-          get_recent_tags() {
-            repo=$1
-            cutoff=$(date -u -d "15 days ago" +%Y-%m-%dT%H:%M:%SZ)
+          # 获取所有 tag（含 latest）
+          get_all_valid_tags() {
+            repo="$1"
             page=1
             tags=()
+            echo "📥 Fetching tags for $repo ..."
 
             while :; do
-              resp=$(curl -s "https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100&page=${page}")
-              filtered=$(echo "$resp" | jq -r --arg cutoff "$cutoff" '
-                .results[]
-                | select(.last_updated >= $cutoff)
+              result=$(curl -s "https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100&page=$page")
+              names=$(echo "$result" | jq -r '
+                .results[]?.name
                 | select(
-                    .name
-                    | test("(?i)(rc|beta|alpha|dev|test|preview|nightly|canary|edge)") | not
+                    test("(?i)(rc|alpha|beta|dev|test|preview|nightly|canary|edge)") | not
                   )
-                | select(
-                    .name
-                    | test("^v?[0-9]+(\\.[0-9]+){0,2}$")
-                  )
-                | .name
               ')
 
-              [ -z "$filtered" ] && break
-              tags+=($filtered)
-              [ "$(echo "$resp" | jq -r '.next')" = "null" ] && break
-              page=$((page+1))
+              [ -z "$names" ] && break
+
+              tags+=($names)
+
+              next=$(echo "$result" | jq -r '.next')
+              [ "$next" = "null" ] && break
+              page=$((page + 1))
             done
 
-            echo "${tags[@]}" | tr ' ' '\n' | sort -V | uniq
+            # 确保包含 latest
+            tags+=("latest")
+            echo "${tags[@]}" | tr ' ' '\n' | sort -Vu
           }
 
-          declare -A duplicate_images temp_map
-          while IFS= read -r line || [ -n "$line" ]; do
-            [[ -z "$line" || "$line" =~ ^# ]] && continue
-            img=$(echo "$line" | sed -E 's/--alias=[^ ]+ //g' | awk '{print $NF}')
-            img="${img%%@*}"
-            imgn=$(basename "$img")
-            ns=$(echo "$img" | awk -F'/' '{print (NF>=2?$(NF-1):"")}')
-            if [ -n "${temp_map[$imgn]:-}" ] && [ "${temp_map[$imgn]}" != "${ns}_" ]; then
-              duplicate_images["$imgn"]=true
-            fi
-            temp_map["$imgn"]="${ns}_"
-          done < images.txt
+          declare -A seen_images duplicate_names
 
           while IFS= read -r line || [ -n "$line" ]; do
             [[ -z "$line" || "$line" =~ ^# ]] && continue
 
             alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
-            img=$(echo "$line" | sed -E 's/--alias=[^ ]+ //g' | awk '{print $NF}')
-            repo="${img%%@*}"
-            imgn=$(basename "$repo")
-            ns=$(echo "$repo" | awk -F'/' '{print (NF>=2?$(NF-1):"")}')
-            ns_prefix=""
-            if [ -n "${duplicate_images[$imgn]:-}" ] && [ -n "$ns" ]; then
-              ns_prefix="${ns}_"
+            img=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | awk '{print $NF}')
+            img="${img%%@*}"
+
+            base_img="${img%%:*}"
+            tag="${img##*:}"
+            [ "$base_img" = "$tag" ] && tag="latest"
+
+            org_repo="$base_img"
+            if [[ "$org_repo" != *"/"* ]]; then
+              org_repo="library/$org_repo"
             fi
 
-            tags=$(get_recent_tags "$repo")
-            if [ -z "$tags" ]; then
-              echo "⚠️  No recent stable tags for ${repo}"
-              continue
-            fi
+            # 标记重复名
+            img_name=$(basename "$base_img")
+            ns=$(echo "$base_img" | awk -F'/' '{print (NF>1 ? $(NF-1) : "")}')
+            [ -n "${seen_images[$img_name]:-}" ] && duplicate_names["$img_name"]=true
+            seen_images["$img_name"]="${ns}_"
 
-            echo "🧩 Found stable tags: ${tags}"
+            tags=$(get_all_valid_tags "$org_repo")
 
-            for tag in $tags; do
-              original="${repo}:${tag}"
-              target_name="${imgn}:${tag}"
-              [ -n "$alias" ] && target_name="${alias}:${tag}"
-              new_img="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$ns_prefix$target_name"
+            for t in $tags; do
+              # 如果用户显式指定了 tag，只同步那一个
+              [[ "$line" =~ : && "$t" != "$tag" && "$t" != "latest" ]] && continue
 
-              echo "🐳 Pulling ${original}..."
-              docker pull "${original}"
+              origin="${base_img}:${t}"
+              final_name="${alias:-$img_name}:${t}"
 
-              echo "🔗 Tagging as ${new_img}..."
-              docker tag "${original}" "${new_img}"
+              ns_prefix=""
+              [ -n "${duplicate_names[$img_name]:-}" ] && [ -n "$ns" ] && ns_prefix="${ns}_"
 
-              echo "📤 Pushing ${new_img}..."
-              docker push "${new_img}"
+              aliyun_image="${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${ns_prefix}${final_name}"
 
-              docker rmi "${original}" "${new_img}" || true
+              echo "🐳 Pulling $origin"
+              docker pull "$origin" || continue
+
+              echo "🔗 Tagging $origin -> $aliyun_image"
+              docker tag "$origin" "$aliyun_image"
+
+              echo "📤 Pushing $aliyun_image"
+              docker push "$aliyun_image"
+
+              docker rmi "$origin" "$aliyun_image" || true
+              echo "✅ Done: $origin -> $aliyun_image"
+              echo "----------------------------------------"
             done
           done < images.txt
