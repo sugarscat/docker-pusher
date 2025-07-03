@@ -8,8 +8,8 @@ adguard/adguardhome:latest
 rustdesk/rustdesk-server-s6:latest
 gitea/gitea:latest
 
-# snowdreamtech/frpc:0.62.1
-# snowdreamtech/frps:0.62.1
+snowdreamtech/frpc:0.62.1
+snowdreamtech/frps:0.62.1
 
 # gitlab/gitlab-ce:17.11.3-ce.0
 # gitlab/gitlab-runner:v17.11.0
