@@ -13,149 +13,117 @@ env:
 
 jobs:
   build:
-    name: Pull & Push 🚀
+    name: Pull & Push Stable Images 🚀
     runs-on: ubuntu-latest
 
     steps:
-    - name: Check Disk Before Cleanup 📦
-      run: |
-        echo "🧹 Before cleaning up..."
-        df -hT
+      - name: Maximize Disk Space 📦
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 2048
+          swap-size-mb: 128
+          remove-dotnet: true
+          remove-haskell: true
+          build-mount-path: '/var/lib/docker/'
 
-    - name: Maximize Disk Space 📈
-      uses: easimon/maximize-build-space@master
-      with:
-        root-reserve-mb: 2048
-        swap-size-mb: 128
-        remove-dotnet: true
-        remove-haskell: true
-        build-mount-path: '/var/lib/docker/'
+      - name: Restart Docker 🔄
+        run: sudo service docker restart
 
-    - name: Restart Docker 🔄
-      run: sudo service docker restart
+      - name: Install Dependencies 🔧
+        run: sudo apt-get update && sudo apt-get install -y jq curl
 
-    - name: Check Disk After Cleanup 📦✅
-      run: |
-        echo "✨ Cleanup done!"
-        df -hT
+      - name: Checkout Code 🛒
+        uses: actions/checkout@v4
 
-    - name: Install jq for JSON parsing 🔧
-      run: sudo apt-get update && sudo apt-get install -y jq curl
+      - name: Setup Docker Buildx 🔧
+        uses: docker/setup-buildx-action@v3
 
-    - name: Checkout Code 🛒
-      uses: actions/checkout@v4
+      - name: Pull, Tag & Push Stable Releases 📦➡️🛳️
+        run: |
+          set -euo pipefail
 
-    - name: Setup Docker Buildx 🔧
-      uses: docker/setup-buildx-action@v3
+          docker login -u "${ALIYUN_REGISTRY_USER}" -p "${ALIYUN_REGISTRY_PASSWORD}" "${ALIYUN_REGISTRY}"
 
-    - name: Pull, Tag, Push Images 📦➡️🛳️
-      run: |
-        set -euo pipefail
+          get_recent_tags() {
+            repo=$1
+            cutoff=$(date -u -d "15 days ago" +%Y-%m-%dT%H:%M:%SZ)
+            page=1
+            tags=()
 
-        ALIYUN_REGISTRY="${{ env.ALIYUN_REGISTRY }}"
-        ALIYUN_NAME_SPACE="${{ env.ALIYUN_NAME_SPACE }}"
-        ALIYUN_REGISTRY_USER="${{ env.ALIYUN_REGISTRY_USER }}"
-        ALIYUN_REGISTRY_PASSWORD="${{ env.ALIYUN_REGISTRY_PASSWORD }}"
+            while :; do
+              resp=$(curl -s "https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100&page=${page}")
+              filtered=$(echo "$resp" | jq -r --arg cutoff "$cutoff" '
+                .results[]
+                | select(.last_updated >= $cutoff)
+                | select(
+                    .name
+                    | test("(?i)(rc|beta|alpha|dev|test|preview|nightly|canary|edge)") | not
+                  )
+                | select(
+                    .name
+                    | test("^v?[0-9]+(\\.[0-9]+){0,2}$")
+                  )
+                | .name
+              ')
 
-        echo "🔑 Login to Aliyun Registry..."
-        docker login -u "$ALIYUN_REGISTRY_USER" -p "$ALIYUN_REGISTRY_PASSWORD" "$ALIYUN_REGISTRY"
+              [ -z "$filtered" ] && break
+              tags+=($filtered)
+              [ "$(echo "$resp" | jq -r '.next')" = "null" ] && break
+              page=$((page+1))
+            done
 
-        # 函数：调用 Docker Hub API 获取最新版本tag
-        get_latest_tag() {
-          local repo=$1
-          latest_tag=$(curl -s "https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100" | \
-            jq -r '.results[].name' | grep -E '^[0-9]+(\.[0-9]+)*$' | sort -V | tail -1)
+            echo "${tags[@]}" | tr ' ' '\n' | sort -V | uniq
+          }
 
-          if [ -z "$latest_tag" ]; then
-            latest_tag="latest"
-          fi
-          echo "$latest_tag"
-        }
-
-        # 读取 images.txt，分析是否有同名镜像，避免命名冲突
-        declare -A duplicate_images temp_map
-        while IFS= read -r line || [ -n "$line" ]; do
-          [[ -z "$line" || "$line" =~ ^# ]] && continue
-          alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
-          image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | xargs | awk '{print $NF}')
-          image="${image%%@*}"
-          image_name=$(basename "$image" | cut -d':' -f1)
-          name_space=$(echo "$image" | awk -F'/' '{print (NF==3 ? $2 : (NF==2 ? $1 : ""))}')
-          if [ -n "${temp_map[$image_name]:-}" ] && [ "${temp_map[$image_name]}" != "${name_space}_" ]; then
-            duplicate_images["$image_name"]=true
-          fi
-          temp_map["$image_name"]="${name_space}_"
-        done < images.txt
-
-        echo "🚀 Start processing images..."
-
-        while IFS= read -r line || [ -n "$line" ]; do
-          [[ -z "$line" || "$line" =~ ^# ]] && continue
-
-          alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
-          platform=$(echo "$line" | awk -F'--platform[ =]' '{if (NF>1) print $2}' | awk '{print $1}')
-          platform_prefix=${platform//\//_}_
-
-          [ -z "$platform" ] && platform_prefix=""
-
-          image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | xargs | awk '{print $NF}')
-          image="${image%%@*}"
-
-          image_name_tag=$(basename "$image")
-          image_name=$(echo "$image_name_tag" | cut -d':' -f1)
-          image_tag=$(echo "$image_name_tag" | cut -d':' -f2)
-          [ -z "$image_tag" ] && image_tag="latest"
-
-          name_space=$(echo "$image" | awk -F'/' '{print (NF==3 ? $2 : (NF==2 ? $1 : ""))}')
-          name_space_prefix=""
-          if [ -n "${duplicate_images[$image_name]:-}" ] && [ -n "$name_space" ]; then
-            name_space_prefix="${name_space}_"
-          fi
-
-          repo=$(echo "$image" | awk -F':' '{print $1}')
-
-          # 处理需要拉取的标签列表
-          tags_to_pull=()
-
-          if [ "$image_tag" == "latest" ]; then
-            tags_to_pull+=("latest")
-
-            if [[ "$repo" == */* ]]; then
-              latest_tag=$(get_latest_tag "$repo")
-              if [ "$latest_tag" != "latest" ] && [ "$latest_tag" != "" ]; then
-                tags_to_pull+=("$latest_tag")
-                echo "🎯 For $repo, also pull latest version tag: $latest_tag"
-              fi
+          declare -A duplicate_images temp_map
+          while IFS= read -r line || [ -n "$line" ]; do
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            img=$(echo "$line" | sed -E 's/--alias=[^ ]+ //g' | awk '{print $NF}')
+            img="${img%%@*}"
+            imgn=$(basename "$img")
+            ns=$(echo "$img" | awk -F'/' '{print (NF>=2?$(NF-1):"")}')
+            if [ -n "${temp_map[$imgn]:-}" ] && [ "${temp_map[$imgn]}" != "${ns}_" ]; then
+              duplicate_images["$imgn"]=true
             fi
-          else
-            tags_to_pull+=("$image_tag")
-          fi
+            temp_map["$imgn"]="${ns}_"
+          done < images.txt
 
-          for tag in "${tags_to_pull[@]}"; do
-            image_name_tag="${image_name}:${tag}"
+          while IFS= read -r line || [ -n "$line" ]; do
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
 
-            # 如果是 alias 且不是 latest 标签，改用 alias 标签命名
-            if [ -n "$alias" ] && [ "$tag" != "latest" ]; then
-              image_name_tag="${alias}:${tag}"
+            alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
+            img=$(echo "$line" | sed -E 's/--alias=[^ ]+ //g' | awk '{print $NF}')
+            repo="${img%%@*}"
+            imgn=$(basename "$repo")
+            ns=$(echo "$repo" | awk -F'/' '{print (NF>=2?$(NF-1):"")}')
+            ns_prefix=""
+            if [ -n "${duplicate_images[$imgn]:-}" ] && [ -n "$ns" ]; then
+              ns_prefix="${ns}_"
             fi
 
-            new_image="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$platform_prefix$name_space_prefix$image_name_tag"
+            tags=$(get_recent_tags "$repo")
+            if [ -z "$tags" ]; then
+              echo "⚠️  No recent stable tags for ${repo}"
+              continue
+            fi
 
-            echo "🐳 Pulling $repo:$tag ..."
-            docker pull "$repo:$tag"
+            echo "🧩 Found stable tags: ${tags}"
 
-            echo "🔗 Tagging as $new_image ..."
-            docker tag "$repo:$tag" "$new_image"
+            for tag in $tags; do
+              original="${repo}:${tag}"
+              target_name="${imgn}:${tag}"
+              [ -n "$alias" ] && target_name="${alias}:${tag}"
+              new_img="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$ns_prefix$target_name"
 
-            echo "📤 Pushing $new_image ..."
-            docker push "$new_image"
+              echo "🐳 Pulling ${original}..."
+              docker pull "${original}"
 
-            echo "🧹 Cleaning up local images..."
-            docker rmi "$repo:$tag" "$new_image"
+              echo "🔗 Tagging as ${new_img}..."
+              docker tag "${original}" "${new_img}"
 
-            echo "🛢️ Disk usage after cleanup:"
-            df -hT
-            echo "=============================================================================="
-          done
+              echo "📤 Pushing ${new_img}..."
+              docker push "${new_img}"
 
-        done < images.txt
+              docker rmi "${original}" "${new_img}" || true
+            done
+          done < images.txt
