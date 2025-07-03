@@ -6,9 +6,7 @@ jetbrains/teamcity-server:latest
 whyour/qinglong:latest
 adguard/adguardhome:latest
 rustdesk/rustdesk-server-s6:latest
-# rustdesk/rustdesk-server-s6:1.1.14
 gitea/gitea:latest
-gitea/gitea:1.24
 
 # snowdreamtech/frpc:0.62.1
 # snowdreamtech/frps:0.62.1
