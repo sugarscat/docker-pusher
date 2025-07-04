@@ -80,7 +80,7 @@ jobs:
                 ts=$(date -d "$updated" +%s 2>/dev/null || echo 0)
 
                 if (( ts >= cutoff_ts )); then
-                  if [[ ! "$tag" =~ (alpha|beta|rc|dev|test|nightly|canary|edge) ]]; then
+                  if [[ ! "$tag" =~ (alpha|beta|rc|dev|test|nightly|canary|edge|amazon) ]]; then
                     tags+=("$tag")
                   fi
                   has_recent=true
