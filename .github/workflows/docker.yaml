@@ -109,11 +109,13 @@ jobs:
           repo="${base}"
           [[ "$repo" != */* ]] && repo="library/$repo"
           name=$(basename "$base")
-          ns=$(echo "$base" | awk -F'/' '{print (NF>1 ? $(NF-1) : "")}')
 
-          prefix=""
-          [[ -n "$ns" ]] && prefix="${ns}_"
-          [[ -n "$alias" ]] && name="$alias"
+          # 直接用仓库名或 alias
+          if [[ -n "$alias" ]]; then
+            target_name="$alias"
+          else
+            target_name="$name"
+          fi
 
           echo "📦 Resolving tags for $repo..."
           if [[ -n "$tag" ]]; then
@@ -124,7 +126,7 @@ jobs:
 
           for t in "${tags[@]}"; do
             src="${base}:${t}"
-            full_target="${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${prefix}${name}:${t}"
+            full_target="${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${t}"
 
             echo "🐳 Pulling $src..."
             if ! docker pull "$src"; then
