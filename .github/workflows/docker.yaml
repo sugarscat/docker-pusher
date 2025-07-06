@@ -63,8 +63,6 @@ jobs:
             local tags=()
             local cutoff_ts=$(date -d '1 day ago' +%s)
 
-            echo "🔍 Fetching recent tags for $repo... \n"
-
             while :; do
               url="https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100&page=$page"
               result=$(curl -fsSL "$url" || break)
