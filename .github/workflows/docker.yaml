@@ -42,7 +42,7 @@ jobs:
           swap-size-mb: 128
           remove-dotnet: true
           remove-haskell: true
-          build-mount-path: '/var/lib/docker/'
+          build-mount-path: "/var/lib/docker/"
 
       - name: Restart Docker 🔄
         run: sudo service docker restart
@@ -78,10 +78,13 @@ jobs:
                 ts=$(date -d "$updated" +%s 2>/dev/null || echo 0)
 
                 if (( ts >= cutoff_ts )); then
-                  if [[ ! "$tag" =~ (alpha|beta|rc|dev|test|nightly|canary|edge|amazon) ]]; then
+                  if [[ "$tag" == "latest" || "$tag" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$ ]]; then
+                    if [[ "$tag" =~ (alpha|beta|rc|dev|test|nightly|canary|edge|amazon) && "$tag" != "latest" ]]; then
+                      continue # 排除不稳定的关键词
+                    fi
                     tags+=("$tag")
+                    has_recent=true
                   fi
-                  has_recent=true
                 fi
               done <<< "$tag_lines"
 
@@ -91,8 +94,7 @@ jobs:
               [[ "$next" == "null" || -z "$next" ]] && break
               ((page++))
             done
-
-            tags+=("latest")
+            
             printf "%s\n" "${tags[@]}" | sort -u
           }
 
