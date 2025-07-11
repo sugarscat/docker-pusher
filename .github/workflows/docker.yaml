@@ -38,12 +38,14 @@ jobs:
       - name: Login to Aliyun Docker 🐳
         run: docker login -u "${ALIYUN_REGISTRY_USER}" -p "${ALIYUN_REGISTRY_PASSWORD}" "${ALIYUN_REGISTRY}"
 
-      - name: Sync Docker Images 🚀 (Parallel 4 Threads)
+      - name: Sync Docker Images 🚀
         run: |
           set -euo pipefail
 
           export ALIYUN_REGISTRY="${ALIYUN_REGISTRY}"
           export ALIYUN_NAME_SPACE="${ALIYUN_NAME_SPACE}"
+          WORKDIR=$(mktemp -d)
+          IMAGE_LIST="${WORKDIR}/final_image_list.txt"
 
           get_recent_tags() {
             local repo="$1"
@@ -81,9 +83,8 @@ jobs:
             printf "%s\n" "${tags[@]}" | sort -u
           }
 
-          sync_one() {
+          generate_list() {
             local line="$1"
-
             alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
             image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | awk '{print $NF}')
             base="${image%%:*}"
@@ -93,14 +94,8 @@ jobs:
             repo="${base}"
             [[ "$repo" != */* ]] && repo="library/$repo"
             name=$(basename "$base")
+            [[ -n "$alias" ]] && target_name="$alias" || target_name="$name"
 
-            if [[ -n "$alias" ]]; then
-              target_name="$alias"
-            else
-              target_name="$name"
-            fi
-
-            echo "📦 Resolving tags for $repo..."
             if [[ -n "$tag" ]]; then
               tags=("$tag")
             else
@@ -109,39 +104,53 @@ jobs:
 
             for t in "${tags[@]}"; do
               src="${base}:${t}"
-              full_target="${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${t}"
-
-              echo "🐳 Pulling $src..."
-              if ! docker pull "$src"; then
-                echo "❌ Failed to pull $src, skipping."
-                continue
-              fi
-
-              src_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$src" 2>/dev/null | cut -d@ -f2)
-              target_digest=$(docker manifest inspect "$full_target" 2>/dev/null | jq -r '.manifests[0].digest // .config.digest' 2>/dev/null || true)
-
-              if [[ -n "$src_digest" && "$src_digest" == "$target_digest" ]]; then
-                echo "✅ $full_target is up-to-date, skipping."
-                docker rmi "$src" || true
-                continue
-              fi
-
-              echo "🔗 Tagging: $src -> $full_target"
-              docker tag "$src" "$full_target"
-
-              echo "📤 Pushing $full_target..."
-              if ! timeout --foreground 300 docker push "$full_target"; then
-                echo "⚠️ Push failed or timed out for $full_target"
-                continue
-              fi
-
-              docker rmi "$src" "$full_target" || true
-              echo "✅ Done: $src -> $full_target"
-              echo "---------------------------------------------"
+              target="${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${t}"
+              echo "$src $target" >> "$IMAGE_LIST"
             done
           }
 
-          export -f sync_one get_recent_tags
+          echo "📦 Generating list of images to sync..."
+          export -f get_recent_tags generate_list
+          export ALIYUN_REGISTRY ALIYUN_NAME_SPACE IMAGE_LIST
 
-          echo "🔍 Reading images.txt and starting 4 parallel syncs..."
-          grep -vE '^\s*#|^\s*$' images.txt | parallel -j 4 --line-buffer sync_one {}
+          grep -vE '^\s*#|^\s*$' images.txt | parallel --line-buffer generate_list {}
+
+          echo "🐳 Found $(wc -l < "$IMAGE_LIST") images to sync."
+          echo "🚀 Starting push in parallel..."
+
+          sync_one() {
+            local src="$1"
+            local target="$2"
+
+            echo "🐳 Pulling $src..."
+            if ! docker pull "$src"; then
+              echo "❌ Failed to pull $src, skipping."
+              return
+            fi
+
+            src_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$src" 2>/dev/null | cut -d@ -f2)
+            target_digest=$(docker manifest inspect "$target" 2>/dev/null | jq -r '.manifests[0].digest // .config.digest' 2>/dev/null || true)
+
+            if [[ -n "$src_digest" && "$src_digest" == "$target_digest" ]]; then
+              echo "✅ $target is up-to-date, skipping."
+              docker rmi "$src" || true
+              return
+            fi
+
+            echo "🔗 Tagging: $src -> $target"
+            docker tag "$src" "$target"
+
+            echo "📤 Pushing $target..."
+            if ! timeout --foreground 300 docker push "$target"; then
+              echo "⚠️ Push failed or timed out for $target"
+              return
+            fi
+
+            docker rmi "$src" "$target" || true
+            echo "✅ Done: $src -> $target"
+            echo "---------------------------------------------"
+          }
+
+          export -f sync_one
+
+          cat "$IMAGE_LIST" | parallel -j 4 --colsep ' ' --line-buffer sync_one {1} {2}
