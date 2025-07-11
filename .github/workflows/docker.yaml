@@ -64,7 +64,7 @@ jobs:
               while IFS=$'\t' read -r tag updated; do
                 ts=$(date -d "$updated" +%s 2>/dev/null || echo 0)
                 if (( ts >= cutoff_ts )); then
-                  if [[ "$tag" == "latest" || "$tag" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$ ]]; then
+                  if [[ "$tag" == "latest" || "$tag" =~ ^v?[0-9]+(\.[0-9]+){0,2}([-a-zA-Z0-9]+)?$ ]]; then
                     if [[ "$tag" =~ (alpha|beta|rc|dev|test|nightly|canary|edge|amazon) && "$tag" != "latest" ]]; then
                       continue
                     fi
@@ -80,31 +80,35 @@ jobs:
               ((page++))
             done
 
-            # ==== 保留每个主版本的最大 patch 和对应 v 标签 ====
-            declare -A version_map=()
+            # ==== 保留每个主版本最新 ====
+
+            declare -A tags_by_major=()
+
             for t in "${tags[@]}"; do
               norm=$(echo "$t" | sed -E 's/^v//')
-              if [[ "$norm" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
-                version_map["$norm"]+="$t "
+              if [[ "$norm" =~ ^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?([-a-zA-Z0-9]+)?$ ]]; then
+                major="${BASH_REMATCH[1]}"
+                tags_by_major["$major"]+="$t "
               fi
             done
 
-            declare -A best_tags=()
-            for v in "${!version_map[@]}"; do
-              major=$(echo "$v" | cut -d. -f1)
-              best_tags["$major"]+="$v "
-            done
-
             declare -A final_keep=()
-            for major in "${!best_tags[@]}"; do
-              all_versions=(${best_tags[$major]})
-              latest=$(printf "%s\n" "${all_versions[@]}" | sort -Vr | head -n1)
-              for orig_tag in ${version_map[$latest]}; do
-                final_keep["$orig_tag"]=1
-              done
+
+            for major in "${!tags_by_major[@]}"; do
+              all_tags=(${tags_by_major[$major]})
+
+              # sort -Vr：版本号降序（数字优先，后缀字典序）
+              latest_tags=$(printf "%s\n" "${all_tags[@]}" | sort -Vr | head -n 3)
+
+              while IFS= read -r line; do
+                final_keep["$line"]=1
+              done <<< "$latest_tags"
+
+              # 保留主版本号单独标签
               final_keep["$major"]=1
             done
 
+            # 保留 latest 标签
             if printf "%s\n" "${tags[@]}" | grep -q "^latest$"; then
               final_keep["latest"]=1
             fi
