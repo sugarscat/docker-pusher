@@ -3,7 +3,7 @@ name: Docker Pusher 🐳✨
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *" # 每天 0 点执行
+    - cron: "0 0 * * *"
 
 env:
   ALIYUN_REGISTRY: "${{ secrets.ALIYUN_REGISTRY }}"
@@ -56,7 +56,6 @@ jobs:
             while :; do
               url="https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100&page=$page"
               result=$(curl -fsSL "$url" || break)
-
               [[ -z "$result" || "$result" == "null" ]] && break
 
               tag_lines=$(echo "$result" | jq -r '.results[] | [.name, .last_updated] | @tsv')
@@ -80,7 +79,37 @@ jobs:
               [[ "$next" == "null" || -z "$next" ]] && break
               ((page++))
             done
-            printf "%s\n" "${tags[@]}" | sort -u
+
+            # ==== 保留每个主版本的最大 patch 和对应 v 标签 ====
+            declare -A version_map=()
+            for t in "${tags[@]}"; do
+              norm=$(echo "$t" | sed -E 's/^v//')
+              if [[ "$norm" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+                version_map["$norm"]+="$t "
+              fi
+            done
+
+            declare -A best_tags=()
+            for v in "${!version_map[@]}"; do
+              major=$(echo "$v" | cut -d. -f1)
+              best_tags["$major"]+="$v "
+            done
+
+            declare -A final_keep=()
+            for major in "${!best_tags[@]}"; do
+              all_versions=(${best_tags[$major]})
+              latest=$(printf "%s\n" "${all_versions[@]}" | sort -Vr | head -n1)
+              for orig_tag in ${version_map[$latest]}; do
+                final_keep["$orig_tag"]=1
+              done
+              final_keep["$major"]=1
+            done
+
+            if printf "%s\n" "${tags[@]}" | grep -q "^latest$"; then
+              final_keep["latest"]=1
+            fi
+
+            printf "%s\n" "${!final_keep[@]}" | sort
           }
 
           generate_list() {
@@ -109,14 +138,14 @@ jobs:
             done
           }
 
-          echo "📦 Generating list of images to sync..."
+          echo "📦 Generating image list from images.txt..."
           export -f get_recent_tags generate_list
           export ALIYUN_REGISTRY ALIYUN_NAME_SPACE IMAGE_LIST
 
           grep -vE '^\s*#|^\s*$' images.txt | parallel --line-buffer generate_list {}
 
-          echo "🐳 Found $(wc -l < "$IMAGE_LIST") images to sync."
-          echo "🚀 Starting push in parallel..."
+          echo "📝 $(wc -l < "$IMAGE_LIST") images to sync:"
+          cat "$IMAGE_LIST"
 
           sync_one() {
             local src="$1"
@@ -124,7 +153,7 @@ jobs:
 
             echo "🐳 Pulling $src..."
             if ! docker pull "$src"; then
-              echo "❌ Failed to pull $src, skipping."
+              echo "❌ Failed to pull $src"
               return
             fi
 
@@ -137,20 +166,19 @@ jobs:
               return
             fi
 
-            echo "🔗 Tagging: $src -> $target"
+            echo "🔗 Tagging $src -> $target"
             docker tag "$src" "$target"
 
             echo "📤 Pushing $target..."
             if ! timeout --foreground 300 docker push "$target"; then
-              echo "⚠️ Push failed or timed out for $target"
+              echo "⚠️ Push failed: $target"
               return
             fi
 
             docker rmi "$src" "$target" || true
             echo "✅ Done: $src -> $target"
-            echo "---------------------------------------------"
+            echo "-------------------------------------------"
           }
 
           export -f sync_one
-
           cat "$IMAGE_LIST" | parallel -j 4 --colsep ' ' --line-buffer sync_one {1} {2}
