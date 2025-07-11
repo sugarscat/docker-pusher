@@ -12,28 +12,8 @@ env:
   ALIYUN_REGISTRY_PASSWORD: "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      images: ${{ steps.extract.outputs.images }}
-    steps:
-      - name: Checkout Code 🛒
-        uses: actions/checkout@v4
-
-      - name: Extract image lines 📦
-        id: extract
-        run: |
-          images=$(grep -vE '^\s*#|^\s*$' images.txt | jq -R -s -c 'split("\n")[:-1]')
-          echo "images=$images" >> $GITHUB_OUTPUT
-
   sync:
-    needs: prepare
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        image_line: ${{ fromJson(needs.prepare.outputs.images) }}
-
     steps:
       - name: Maximize Disk Space 📦
         uses: easimon/maximize-build-space@master
@@ -47,15 +27,23 @@ jobs:
       - name: Restart Docker 🔄
         run: sudo service docker restart
 
+      - name: Checkout Code 🛒
+        uses: actions/checkout@v4
+
       - name: Install Tools 🔧
-        run: sudo apt-get update && sudo apt-get install -y curl jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq moreutils parallel
 
       - name: Login to Aliyun Docker 🐳
         run: docker login -u "${ALIYUN_REGISTRY_USER}" -p "${ALIYUN_REGISTRY_PASSWORD}" "${ALIYUN_REGISTRY}"
 
-      - name: Sync Docker Image 🚀
+      - name: Sync Docker Images 🚀 (Parallel 4 Threads)
         run: |
           set -euo pipefail
+
+          export ALIYUN_REGISTRY="${ALIYUN_REGISTRY}"
+          export ALIYUN_NAME_SPACE="${ALIYUN_NAME_SPACE}"
 
           get_recent_tags() {
             local repo="$1"
@@ -67,20 +55,17 @@ jobs:
               url="https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100&page=$page"
               result=$(curl -fsSL "$url" || break)
 
-              if [[ -z "$result" || "$result" == "null" ]]; then
-                break
-              fi
+              [[ -z "$result" || "$result" == "null" ]] && break
 
               tag_lines=$(echo "$result" | jq -r '.results[] | [.name, .last_updated] | @tsv')
               has_recent=false
 
               while IFS=$'\t' read -r tag updated; do
                 ts=$(date -d "$updated" +%s 2>/dev/null || echo 0)
-
                 if (( ts >= cutoff_ts )); then
                   if [[ "$tag" == "latest" || "$tag" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$ ]]; then
                     if [[ "$tag" =~ (alpha|beta|rc|dev|test|nightly|canary|edge|amazon) && "$tag" != "latest" ]]; then
-                      continue # 排除不稳定的关键词
+                      continue
                     fi
                     tags+=("$tag")
                     has_recent=true
@@ -89,74 +74,74 @@ jobs:
               done <<< "$tag_lines"
 
               [[ "$has_recent" == false ]] && break
-
               next=$(echo "$result" | jq -r '.next')
               [[ "$next" == "null" || -z "$next" ]] && break
               ((page++))
             done
-            
             printf "%s\n" "${tags[@]}" | sort -u
           }
 
-          line="${{ matrix.image_line }}"
+          sync_one() {
+            local line="$1"
 
-          alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
-          image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | awk '{print $NF}')
-          base="${image%%:*}"
-          tag="${image##*:}"
-          [[ "$base" == "$tag" ]] && tag=""
+            alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
+            image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | awk '{print $NF}')
+            base="${image%%:*}"
+            tag="${image##*:}"
+            [[ "$base" == "$tag" ]] && tag=""
 
-          repo="${base}"
-          [[ "$repo" != */* ]] && repo="library/$repo"
-          name=$(basename "$base")
+            repo="${base}"
+            [[ "$repo" != */* ]] && repo="library/$repo"
+            name=$(basename "$base")
 
-          # 直接用仓库名或 alias
-          if [[ -n "$alias" ]]; then
-            target_name="$alias"
-          else
-            target_name="$name"
-          fi
-
-          echo "📦 Resolving tags for $repo..."
-          if [[ -n "$tag" ]]; then
-            tags=("$tag")
-          else
-            tags=($(get_recent_tags "$repo"))
-          fi
-
-          for t in "${tags[@]}"; do
-            src="${base}:${t}"
-            full_target="${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${t}"
-
-            echo "🐳 Pulling $src..."
-            if ! docker pull "$src"; then
-              echo "❌ Failed to pull $src, skipping."
-              continue
+            if [[ -n "$alias" ]]; then
+              target_name="$alias"
+            else
+              target_name="$name"
             fi
 
-            echo "🔍 Inspecting source image digest..."
-            src_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$src" 2>/dev/null | cut -d@ -f2)
-
-            echo "🔍 Checking target digest..."
-            target_digest=$(docker manifest inspect "$full_target" 2>/dev/null | jq -r '.manifests[0].digest // .config.digest' 2>/dev/null || true)
-
-            if [[ -n "$src_digest" && "$src_digest" == "$target_digest" ]]; then
-              echo "✅ $full_target is up-to-date (digest match), skipping push."
-              docker rmi "$src" || true
-              continue
+            echo "📦 Resolving tags for $repo..."
+            if [[ -n "$tag" ]]; then
+              tags=("$tag")
+            else
+              tags=($(get_recent_tags "$repo"))
             fi
 
-            echo "🔗 Tagging: $src -> $full_target"
-            docker tag "$src" "$full_target"
+            for t in "${tags[@]}"; do
+              src="${base}:${t}"
+              full_target="${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${t}"
 
-            echo "📤 Pushing $full_target..."
-            if ! timeout --foreground 300 docker push "$full_target"; then
-              echo "⚠️ Push failed or timed out for $full_target"
-              continue
-            fi
+              echo "🐳 Pulling $src..."
+              if ! docker pull "$src"; then
+                echo "❌ Failed to pull $src, skipping."
+                continue
+              fi
 
-            echo "🧹 Cleaning up local images..."
-            docker rmi "$src" "$full_target" || true
-            echo "✅ Done: $src -> $full_target"
-            echo "---------------------------------------------"
-          done
+              src_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$src" 2>/dev/null | cut -d@ -f2)
+              target_digest=$(docker manifest inspect "$full_target" 2>/dev/null | jq -r '.manifests[0].digest // .config.digest' 2>/dev/null || true)
+
+              if [[ -n "$src_digest" && "$src_digest" == "$target_digest" ]]; then
+                echo "✅ $full_target is up-to-date, skipping."
+                docker rmi "$src" || true
+                continue
+              fi
+
+              echo "🔗 Tagging: $src -> $full_target"
+              docker tag "$src" "$full_target"
+
+              echo "📤 Pushing $full_target..."
+              if ! timeout --foreground 300 docker push "$full_target"; then
+                echo "⚠️ Push failed or timed out for $full_target"
+                continue
+              fi
+
+              docker rmi "$src" "$full_target" || true
+              echo "✅ Done: $src -> $full_target"
+              echo "---------------------------------------------"
+            done
+          }
+
+          export -f sync_one get_recent_tags
+
+          echo "🔍 Reading images.txt and starting 4 parallel syncs..."
+          grep -vE '^\s*#|^\s*$' images.txt | parallel -j 4 --line-buffer sync_one {}
