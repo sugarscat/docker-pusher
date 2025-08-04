@@ -80,10 +80,7 @@ jobs:
               ((page++))
             done
 
-            # ==== 保留每个主版本最新 ====
-
             declare -A tags_by_major=()
-
             for t in "${tags[@]}"; do
               norm=$(echo "$t" | sed -E 's/^v//')
               if [[ "$norm" =~ ^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?([-a-zA-Z0-9]+)?$ ]]; then
@@ -93,22 +90,15 @@ jobs:
             done
 
             declare -A final_keep=()
-
             for major in "${!tags_by_major[@]}"; do
               all_tags=(${tags_by_major[$major]})
-
-              # sort -Vr：版本号降序（数字优先，后缀字典序）
               latest_tags=$(printf "%s\n" "${all_tags[@]}" | sort -Vr | head -n 3)
-
               while IFS= read -r line; do
                 final_keep["$line"]=1
               done <<< "$latest_tags"
-
-              # 保留主版本号单独标签
               final_keep["$major"]=1
             done
 
-            # 保留 latest 标签
             if printf "%s\n" "${tags[@]}" | grep -q "^latest$"; then
               final_keep["latest"]=1
             fi
@@ -143,10 +133,11 @@ jobs:
           }
 
           echo "📦 Generating image list from images.txt..."
-          export -f get_recent_tags generate_list
-          export ALIYUN_REGISTRY ALIYUN_NAME_SPACE IMAGE_LIST
-
-          grep -vE '^\s*#|^\s*$' images.txt | parallel --line-buffer generate_list {}
+          > "$IMAGE_LIST"
+          while IFS= read -r line; do
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            generate_list "$line"
+          done < images.txt
 
           echo "📝 $(wc -l < "$IMAGE_LIST") images to sync:"
           cat "$IMAGE_LIST"
