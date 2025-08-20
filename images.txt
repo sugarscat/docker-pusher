@@ -27,6 +27,9 @@ adguard/adguardhome
 gitea/gitea
 minio/minio
 mongodb/mongodb-community-server
+netbirdio/dashboard --alias netbird-dashboard
+netbirdio/management --alias netbird-management
+netbirdio/netbird
 rustdesk/rustdesk-server-s6
 snowdreamtech/frpc
 snowdreamtech/frps
