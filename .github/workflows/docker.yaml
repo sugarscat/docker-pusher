@@ -65,7 +65,7 @@ jobs:
                 ts=$(date -d "$updated" +%s 2>/dev/null || echo 0)
                 if (( ts >= cutoff_ts )); then
                   if [[ "$tag" =~ ^(latest|bookworm|bullseye|alpine)$ || "$tag" =~ ^v?[0-9]+(\.[0-9]+){0,2}([-a-zA-Z0-9]+)?$ ]]; then
-                    if [[ "$tag" =~ (alpha|beta|rc|dev|test|nightly|canary|edge|amazon) && "$tag" != "latest" ]]; then
+                    if [[ "$tag" =~ (alpha|beta|rc|dev|test|debug|nightly|canary|edge|amazon) && "$tag" != "latest" ]]; then
                       continue
                     fi
                     tags+=("$tag")
