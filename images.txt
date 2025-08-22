@@ -25,6 +25,8 @@ ubuntu
 
 adguard/adguardhome
 gitea/gitea
+gitlab/gitlab-ce
+gitlab/gitlab-runner
 minio/minio
 mongodb/mongodb-community-server
 netbirdio/dashboard --alias netbird-dashboard
