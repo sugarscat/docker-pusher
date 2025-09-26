@@ -39,4 +39,5 @@ rustdesk/rustdesk-server-s6
 snowdreamtech/frpc
 snowdreamtech/frps
 vaultwarden/server --alias vaultwarden
+weblate/weblate
 whyour/qinglong
