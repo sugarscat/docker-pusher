@@ -30,6 +30,7 @@ gitea/gitea
 gitlab/gitlab-ce
 gitlab/gitlab-runner
 homeassistant/home-assistant
+jetbrains/youtrack
 n8nio/n8n
 netbirdio/dashboard --alias netbird-dashboard
 netbirdio/management --alias netbird-management
