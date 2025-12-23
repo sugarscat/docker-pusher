@@ -6,6 +6,7 @@
 alpine
 api-firewall
 caddy
+caddy
 debian
 elasticsearch
 golang
@@ -16,6 +17,7 @@ node
 openjdk
 perl
 postgres
+postgres:16-alpine
 python
 redis
 registry
@@ -26,6 +28,9 @@ traefik
 ubuntu
 
 adguard/adguardhome
+cockroachdb/cockroach:latest-v23.2
+coturn/coturn
+ghcr.io/zitadel/zitadel
 gitea/gitea
 homeassistant/home-assistant
 jetbrains/youtrack
@@ -33,6 +38,8 @@ n8nio/n8n
 netbirdio/dashboard --alias netbird-dashboard
 netbirdio/management --alias netbird-management
 netbirdio/netbird
+netbirdio/relay --alias netbird-relay
+netbirdio/signal --alias netbird-signal
 ollama/ollama
 rustdesk/rustdesk-server-s6
 snowdreamtech/frpc
