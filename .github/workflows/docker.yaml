@@ -47,7 +47,7 @@ jobs:
           WORKDIR=$(mktemp -d)
           IMAGE_LIST="${WORKDIR}/final_image_list.txt"
 
-          get_recent_tags() {
+          get_dockerhub_recent_tags() {
             local repo="$1"
             local page=1
             local tags=()
@@ -108,36 +108,110 @@ jobs:
             printf "%s\n" "${!final_keep[@]}" | sort
           }
 
-          generate_list() {
-            local line="$1"
-            alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
-            image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | awk '{print $NF}')
-            base="${image%%:*}"
-            tag="${image##*:}"
-            [[ "$base" == "$tag" ]] && tag=""
+          get_ghcr_recent_tags() {
+            local full_name="$1"
+            local page=1
+            local tags=()
+            local cutoff_ts=$(date -d '2 days ago' +%s)
 
-            repo="${base}"
-            [[ "$repo" != */* ]] && repo="library/$repo"
-            name=$(basename "$base")
-            [[ -n "$alias" ]] && target_name="$alias" || target_name="$name"
+            while :; do
+              url="https://ghcr.io/v2/${full_name}/tags/list?page_size=100&page=$page"
+              result=$(curl -fsSL -H "Accept: application/vnd.oci.image.index.v1+json" "$url" || break)
+              [[ -z "$result" || "$result" == "null" || "$result" == "{}" ]] && break
 
-            if [[ -n "$tag" ]]; then
-              tags=("$tag")
-            else
-              tags=($(get_recent_tags "$repo"))
+              tag_lines=$(echo "$result" | jq -r '.tags[]? // empty')
+              [[ -z "$tag_lines" ]] && break
+
+              while IFS= read -r tag; do
+                if [[ "$tag" =~ ^(latest|main|master|develop|bookworm|bullseye|alpine)$ || "$tag" =~ ^v?[0-9]+(\.[0-9]+){0,2}([-a-zA-Z0-9]+)?$ ]]; then
+                  if [[ "$tag" =~ (alpha|beta|rc|dev|test|debug|nightly|canary|edge|amazon) && "$tag" != "latest" ]]; then
+                    continue
+                  fi
+                  tags+=("$tag")
+                fi
+              done <<< "$tag_lines"
+
+              ((page++))
+              if [[ $page -gt 1 ]]; then
+                break
+              fi
+            done
+
+            declare -A tags_by_major=()
+            for t in "${tags[@]}"; do
+              norm=$(echo "$t" | sed -E 's/^v//')
+              if [[ "$norm" =~ ^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?([-a-zA-Z0-9]+)?$ ]]; then
+                major="${BASH_REMATCH[1]}"
+                tags_by_major["$major"]+="$t "
+              fi
+            done
+
+            declare -A final_keep=()
+            for major in "${!tags_by_major[@]}"; do
+              all_tags=(${tags_by_major[$major]})
+              latest_tags=$(printf "%s\n" "${all_tags[@]}" | sort -Vr | head -n 3)
+              while IFS= read -r line; do
+                final_keep["$line"]=1
+              done <<< "$latest_tags"
+              if printf "%s\n" "${all_tags[@]}" | grep -qx "$major"; then
+                final_keep["$major"]=1
+              fi
+            done
+
+            if printf "%s\n" "${tags[@]}" | grep -q "^latest$"; then
+              final_keep["latest"]=1
             fi
 
-            for t in "${tags[@]}"; do
-              src="${base}:${t}"
-              target="${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${t}"
-              echo "$src $target" >> "$IMAGE_LIST"
-            done
+            printf "%s\n" "${!final_keep[@]}" | sort
+          }
+
+          generate_list() {
+            local line="$(echo "$1" | xargs)"
+            [[ -z "$line" || "$line" =~ ^# ]] && return
+
+            alias=$(echo "$line" | sed -n 's/.*--alias[ =]\([^ ]*\).*/\1/p')
+            image=$(echo "$line" | sed -E 's/--alias[ =][^ ]+//g' | awk '{print $NF}' | xargs)
+            
+            if [[ "$image" == *:* ]]; then
+              base="${image%%:*}"
+              tag="${image##*:}"
+            else
+              base="$image"
+              tag=""
+            fi
+
+            if [[ "$image" =~ ^ghcr\.io/ ]]; then
+              repo="${image#ghcr.io/}"
+              name="$(echo "$base" | awk -F/ '{print $NF}')"
+              [[ -n "$alias" ]] && target_name="$alias" || target_name="$name"
+
+              if [[ -n "$tag" ]]; then
+                echo "${base}:${tag} ${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${tag}" >> "$IMAGE_LIST"
+              else
+                tags=($(get_ghcr_recent_tags "$repo"))
+                for t in "${tags[@]}"; do
+                  echo "${base}:${t} ${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${t}" >> "$IMAGE_LIST"
+                done
+              fi
+            else
+              repo="${base}"
+              [[ "$repo" != */* ]] && repo="library/$repo"
+              name="$(echo "$base" | awk -F/ '{print $NF}')"
+              [[ -n "$alias" ]] && target_name="$alias" || target_name="$name"
+              if [[ -n "$tag" ]]; then
+                echo "${base}:${tag} ${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${tag}" >> "$IMAGE_LIST"
+              else
+                tags=($(get_dockerhub_recent_tags "$repo"))
+                for t in "${tags[@]}"; do
+                  echo "${base}:${t} ${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${target_name}:${t}" >> "$IMAGE_LIST"
+                done
+              fi
+            fi
           }
 
           echo "📦 Generating image list from images.txt..."
           > "$IMAGE_LIST"
           while IFS= read -r line; do
-            [[ -z "$line" || "$line" =~ ^# ]] && continue
             generate_list "$line"
           done < images.txt
 
