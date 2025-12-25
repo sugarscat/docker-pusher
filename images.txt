@@ -1,4 +1,3 @@
-# minio/minio
 # mongodb/mongodb-community-server
 # vaultwarden/server --alias vaultwarden
 # 支持别名（格式为 '镜像 --alias 名称' ）
@@ -43,6 +42,7 @@ netbirdio/relay --alias netbird-relay
 netbirdio/signal --alias netbird-signal
 ollama/ollama
 rustdesk/rustdesk-server-s6
+rustfs/rustfs
 snowdreamtech/frpc
 snowdreamtech/frps
 vaultwarden/server --alias vaultwarden
