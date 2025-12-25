@@ -34,6 +34,7 @@ coturn/coturn
 gitea/gitea
 homeassistant/home-assistant
 jetbrains/youtrack
+linuxserver/qbittorrent
 n8nio/n8n
 netbirdio/dashboard --alias netbird-dashboard
 netbirdio/management --alias netbird-management
