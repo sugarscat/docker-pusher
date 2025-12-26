@@ -30,6 +30,8 @@ ubuntu
 
 adguard/adguardhome
 coturn/coturn
+ghcr.io/fatedier/frpc
+ghcr.io/fatedier/frps
 gitea/gitea
 homeassistant/home-assistant
 jetbrains/youtrack
