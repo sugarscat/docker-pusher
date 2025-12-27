@@ -33,6 +33,10 @@ coturn/coturn
 ghcr.io/fatedier/frpc
 ghcr.io/fatedier/frps
 gitea/gitea
+gitlab/gitlab-ce:18.7.0-ce.0
+gitlab/gitlab-ce:latest
+gitlab/gitlab-ce
+gitlab/gitlab-runner
 homeassistant/home-assistant
 jetbrains/youtrack
 linuxserver/qbittorrent
