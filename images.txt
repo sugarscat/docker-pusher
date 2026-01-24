@@ -43,6 +43,7 @@ netbirdio/netbird
 netbirdio/relay --alias netbird-relay
 netbirdio/signal --alias netbird-signal
 ollama/ollama
+oven/bun
 rustdesk/rustdesk-server-s6
 rustfs/rustfs
 snowdreamtech/frpc
