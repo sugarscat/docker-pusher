@@ -2,6 +2,12 @@
 # vaultwarden/server --alias vaultwarden
 # 支持别名（格式为 '镜像 --alias 名称' ）
 #cockroachdb/cockroach:latest-v23.2
+#netbirdio/dashboard --alias netbird-dashboard
+#netbirdio/management --alias netbird-management
+#netbirdio/netbird
+#netbirdio/relay --alias netbird-relay
+#netbirdio/signal --alias netbird-signal
+#whyour/qinglong
 
 alpine
 api-firewall
@@ -29,6 +35,7 @@ ubuntu
 
 adguard/adguardhome
 coturn/coturn
+ghcr.io/astral-sh/uv
 gitea/gitea
 gitlab/gitlab-ce
 gitlab/gitlab-runner
@@ -36,11 +43,6 @@ homeassistant/home-assistant
 jetbrains/youtrack
 linuxserver/qbittorrent
 n8nio/n8n
-#netbirdio/dashboard --alias netbird-dashboard
-#netbirdio/management --alias netbird-management
-#netbirdio/netbird
-#netbirdio/relay --alias netbird-relay
-#netbirdio/signal --alias netbird-signal
 ollama/ollama
 oven/bun
 rustdesk/rustdesk-server-s6
@@ -49,4 +51,3 @@ snowdreamtech/frpc
 snowdreamtech/frps
 vaultwarden/server --alias vaultwarden
 weblate/weblate
-#whyour/qinglong

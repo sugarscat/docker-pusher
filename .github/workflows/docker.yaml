@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       images:
-        description: "镜像列表（每行一个，留空则读取 images.txt）"
+        description: "镜像"
         required: false
         type: string
         default: ""
