@@ -25,7 +25,7 @@ jobs:
       - name: Maximize Disk Space 📦
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 512
+          root-reserve-mb: 1024
           swap-size-mb: 128
           remove-dotnet: true
           remove-haskell: true
@@ -248,6 +248,7 @@ jobs:
             echo "🐳 Pulling $src..."
             if ! docker pull "$src"; then
               echo "❌ Failed to pull $src"
+              docker rmi "$src" 2>/dev/null || true
               return
             fi
 
@@ -266,6 +267,7 @@ jobs:
             echo "📤 Pushing $target..."
             if ! timeout --foreground 300 docker push "$target"; then
               echo "⚠️ Push failed: $target"
+              docker rmi "$src" "$target" 2>/dev/null || true
               return
             fi
 
