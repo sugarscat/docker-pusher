@@ -39,6 +39,7 @@ ghcr.io/astral-sh/uv
 gitea/gitea
 gitlab/gitlab-ce
 gitlab/gitlab-runner
+headscale/headscale
 homeassistant/home-assistant
 jetbrains/youtrack
 linuxserver/qbittorrent
