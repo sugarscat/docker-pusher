@@ -50,6 +50,7 @@ rustdesk/rustdesk-server-s6
 rustfs/rustfs
 snowdreamtech/frpc
 snowdreamtech/frps
+stirlingtools/stirling-pdf
 tailscale/tailscale
 vaultwarden/server --alias vaultwarden
 weblate/weblate
