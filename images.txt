@@ -32,6 +32,7 @@ adguard/adguardhome
 coturn/coturn
 ghcr.io/astral-sh/uv
 ghcr.io/ggml-org/llama.cpp
+ghcr.io/mikumifa/bilitickerbuy
 gitea/gitea
 gitlab/gitlab-ce
 gitlab/gitlab-runner
