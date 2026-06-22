@@ -41,6 +41,7 @@ headscale/headscale
 homeassistant/home-assistant
 jetbrains/youtrack
 linuxserver/qbittorrent
+metacubex/mihomo
 n8nio/n8n
 netbirdio/dashboard --alias netbird-dashboard
 netbirdio/management --alias netbird-management
