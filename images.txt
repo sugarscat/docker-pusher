@@ -36,6 +36,7 @@ ghcr.io/mikumifa/bilitickerbuy
 gitea/gitea
 gitlab/gitlab-ce
 gitlab/gitlab-runner
+gitlab/gitlab-runner-helper
 headscale/headscale
 homeassistant/home-assistant
 jetbrains/youtrack
